@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: mastra-design-agent
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: node .mastra/output/index.mjs
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NODE_VERSION
+        value: "20"

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mastra Design Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="chat" aria-label="Design chat">
+        <header class="chat__header">
+          <h1>Design chat</h1>
+          <div class="chat__header-actions">
+            <button id="voice" type="button" class="ghost voice-btn" aria-pressed="false">
+              <span class="voice-dot" aria-hidden="true"></span>
+              <span class="voice-label">Start voice</span>
+            </button>
+            <button id="reset" type="button" class="ghost">Reset preview</button>
+          </div>
+        </header>
+        <ol id="log" class="chat__log"></ol>
+        <form id="composer" class="chat__composer">
+          <input
+            id="input"
+            name="message"
+            type="text"
+            autocomplete="off"
+            required
+            placeholder="Make the background warm cream and the headline 'Voice, but for design'"
+          />
+          <button id="send" type="submit">Send</button>
+        </form>
+        <p class="chat__hint">
+          Try: <em>switch to a serif body font</em>, <em>center the hero</em>,
+          <em>make it darker</em>, <em>reset</em>.
+        </p>
+      </section>
+      <section class="preview" aria-label="Live preview">
+        <div id="preview-frame" class="preview__frame"></div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
