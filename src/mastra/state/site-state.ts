@@ -52,7 +52,7 @@ const defaults: SiteState = {
   features: [
     { title: "Tool-driven", body: "Every change is a structured tool call." },
     { title: "Live preview", body: "The right pane re-renders after each turn." },
-    { title: "Inworld-routed", body: "LLM calls flow through the Inworld Router." },
+    { title: "OpenAI-powered", body: "GPT-4o and Realtime API for text and voice." },
   ],
 };
 
