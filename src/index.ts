@@ -220,9 +220,21 @@ async function connectVoice(
     }
   });
 
+  // The first spoken response on a connection is its intro (greeting or
+  // recovery apology) — completing THAT must not forgive recoveries, or an
+  // error→recover→apology→error cycle would loop forever under the cap.
+  let introDone = false;
+
   on("speaking.done", (payload: unknown) => {
     const { response_id } = payload as { response_id?: string };
     if (response_id) cancelled.delete(response_id);
+    if (introDone) {
+      // A real answer completed = the session is healthy; forgive past
+      // hiccups so sporadic recoveries over a long session don't exhaust
+      // the cap.
+      session.recoveries = 0;
+    }
+    introDone = true;
     sendJSON(ws, { type: "speaking.done", responseId: response_id });
   });
 
@@ -258,8 +270,23 @@ async function connectVoice(
   });
 
   on("error", (err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
+    // Inworld error events nest the useful part: { error: { message, ... } }.
+    const e = err as { message?: string; error?: { message?: string } };
+    const message =
+      e?.error?.message ??
+      e?.message ??
+      (err instanceof Error ? err.message : JSON.stringify(err));
+    console.warn(
+      "upstream voice error:",
+      typeof err === "object" ? JSON.stringify(err).slice(0, 600) : String(err),
+    );
     sendJSON(ws, { type: "error", message });
+    // A server-side error mid-session leaves the conversation wedged: the
+    // error's own response.done settles the watchdog, and every following
+    // turn errors again. A fresh session is the only way back — rebuild.
+    if (session.voice === voice) {
+      void recoverSession(session, ws, `upstream error event: ${message}`);
+    }
   });
 
   await voice.connect();
@@ -389,6 +416,15 @@ app.get(
           };
           v?.ws?.removeAllListeners?.("message");
           v?.sendEvent?.("response.create", {});
+          return;
+        }
+        // __error_upstream: replay a server-side error event (the
+        // poisoned-conversation mode where every turn errors).
+        if (process.env.TEST_HOOKS === "1" && msg?.type === "__error_upstream") {
+          (session.voice as unknown as { emit?: (ev: string, p: unknown) => void })?.emit?.(
+            "error",
+            { error: { message: "simulated upstream error" } },
+          );
           return;
         }
       } catch {
