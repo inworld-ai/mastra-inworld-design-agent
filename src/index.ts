@@ -11,6 +11,11 @@ import { createSiteState, defaults, type SiteStateStore } from "./mastra/state/s
 
 const PORT = Number(process.env.PORT ?? 4111);
 
+// Demo-stability net: a stray async error (e.g. a terminated proxied stream)
+// shouldn't take down every active voice session. Log and keep serving.
+process.on("uncaughtException", err => console.error("[uncaught]", err));
+process.on("unhandledRejection", err => console.error("[unhandled rejection]", err));
+
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
@@ -48,15 +53,24 @@ app.get("/api/state", c => c.json(defaults));
 type InworldVoice = NonNullable<Awaited<ReturnType<DesignerAgent["getVoice"]>>>;
 
 type VoiceSession = {
-  agent: DesignerAgent;
-  voice: InworldVoice;
   siteState: SiteStateStore;
+  /** Current upstream voice connection; null briefly while recovering. */
+  voice: InworldVoice | null;
   /** response_ids that have been cancelled — drop further `speaking` chunks. */
   cancelled: Set<string>;
+  /** Armed when a response is owed (user turn ended / tool output sent). */
+  watchdog: NodeJS.Timeout | null;
+  recovering: boolean;
+  recoveries: number;
+  closed: boolean;
   cleanup: () => Promise<void>;
 };
 
 const sessions = new WeakMap<WSContext, VoiceSession>();
+
+/** No assistant activity within this window after a turn ends → wedged. */
+const RESPONSE_WATCHDOG_MS = 15_000;
+const MAX_RECOVERIES = 3;
 
 function sendJSON(ws: WSContext, msg: Record<string, unknown>): void {
   try {
@@ -66,26 +80,82 @@ function sendJSON(ws: WSContext, msg: Record<string, unknown>): void {
   }
 }
 
-async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
-  if (!process.env.INWORLD_API_KEY) {
-    sendJSON(ws, { type: "error", message: "INWORLD_API_KEY is not set" });
-    ws.close(1011, "missing api key");
-    return null;
+function disarmWatchdog(session: VoiceSession): void {
+  if (session.watchdog) clearTimeout(session.watchdog);
+  session.watchdog = null;
+}
+
+function armWatchdog(session: VoiceSession, ws: WSContext): void {
+  disarmWatchdog(session);
+  session.watchdog = setTimeout(() => {
+    void recoverSession(session, ws, "no response within watchdog window");
+  }, RESPONSE_WATCHDOG_MS);
+}
+
+function closeVoice(session: VoiceSession): void {
+  disarmWatchdog(session);
+  const voice = session.voice;
+  session.voice = null;
+  try {
+    voice?.close();
+  } catch {
+    /* already closed */
+  }
+}
+
+/* ---------- Recovery ----------
+ *
+ * The realtime session can die in ways the SDK doesn't surface (silent
+ * upstream socket drops) or wedge while the socket stays open (no response
+ * ever arrives). Either way: tear down just the voice connection and build a
+ * fresh one UNDER the same browser session — same WS, same site state, so
+ * the visitor keeps their design. The recovered agent announces the hiccup.
+ */
+async function recoverSession(session: VoiceSession, ws: WSContext, reason: string): Promise<void> {
+  if (session.closed || session.recovering) return;
+  session.recovering = true;
+  session.recoveries += 1;
+  console.warn(`voice session recovery #${session.recoveries}: ${reason}`);
+
+  closeVoice(session);
+
+  if (session.recoveries > MAX_RECOVERIES) {
+    sendJSON(ws, { type: "error", message: "voice session lost — tap to restart" });
+    ws.close(1011, "voice unrecoverable");
+    session.recovering = false;
+    return;
   }
 
-  const siteState = createSiteState();
-  // Latest published Studio edit, if any — resolved per session so saves in
-  // /admin apply to the next visitor without a restart.
+  sendJSON(ws, { type: "error", message: "voice hiccup — reconnecting…" });
+  try {
+    await connectVoice(session, ws, {
+      seed: "[The voice connection dropped and recovered. Briefly acknowledge the hiccup and ask the user to repeat their last request.]",
+    });
+  } catch (err) {
+    console.warn("recovery failed:", err instanceof Error ? err.message : err);
+    sendJSON(ws, { type: "error", message: "voice session lost — tap to restart" });
+    ws.close(1011, "voice unrecoverable");
+  } finally {
+    session.recovering = false;
+  }
+}
+
+/** Build a designer + voice over the session's existing state, wire events,
+ *  connect, and kick off a spoken intro. Used for both first connect and
+ *  recovery. */
+async function connectVoice(
+  session: VoiceSession,
+  ws: WSContext,
+  intro: { seed: string },
+): Promise<void> {
+  // Latest published Studio edit, if any — resolved per (re)connect so saves
+  // in /admin apply without a restart.
   const instructionsOverride = await resolveDesignerInstructions();
-  const agent = createDesigner(siteState, instructionsOverride);
+  const agent = createDesigner(session.siteState, instructionsOverride);
   const voice = await agent.getVoice();
-  if (!voice) {
-    sendJSON(ws, { type: "error", message: "voice provider unavailable" });
-    ws.close(1011, "no voice");
-    return null;
-  }
+  if (!voice) throw new Error("voice provider unavailable");
 
-  const cancelled = new Set<string>();
+  const cancelled = session.cancelled;
 
   // Wire voice events → WS. Listeners type-check loosely because
   // MastraVoice's VoiceEventMap declares some fields narrower than the
@@ -94,6 +164,7 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
 
   on("speaking", (payload: unknown) => {
     const { audio, response_id } = payload as { audio: Buffer | Uint8Array; response_id?: string };
+    disarmWatchdog(session); // assistant is responding
     // Skip chunks for responses we already cancelled. Inworld typically stops
     // emitting them on its own once `interrupt_response` fires, but the server
     // can have a tail in flight, and dropping them here means the client never
@@ -122,6 +193,12 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
       role: "user" | "assistant";
       response_id?: string;
     };
+    if (role === "assistant") {
+      disarmWatchdog(session);
+    } else if (text === "\n") {
+      // Finalized user transcript = turn over, a response is now owed.
+      armWatchdog(session, ws);
+    }
     sendJSON(ws, { type: "transcript", role, text, responseId: response_id });
   });
 
@@ -131,20 +208,25 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
       args?: unknown;
       result?: unknown;
     };
+    // The SDK just sent the function output + response.create — a follow-up
+    // response is owed.
+    armWatchdog(session, ws);
     sendJSON(ws, { type: "tool", toolName, args, result });
-    sendJSON(ws, { type: "state", state: siteState.get() });
+    sendJSON(ws, { type: "state", state: session.siteState.get() });
   });
 
   on("interrupted", (payload: unknown) => {
     const { response_id } = payload as { response_id?: string };
     if (response_id) cancelled.add(response_id);
+    disarmWatchdog(session); // user took the turn back — nothing owed
     // `interrupt_response: true` already cancels the response server-side from
     // VAD; the `cancelled` set above drops any tail chunks still in flight.
     sendJSON(ws, { type: "interrupted", responseId: response_id });
   });
 
   on("response.done", () => {
-    sendJSON(ws, { type: "state", state: siteState.get() });
+    disarmWatchdog(session);
+    sendJSON(ws, { type: "state", state: session.siteState.get() });
   });
 
   on("error", (err: unknown) => {
@@ -152,8 +234,68 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
     sendJSON(ws, { type: "error", message });
   });
 
+  await voice.connect();
+  session.voice = voice;
+
+  // The SDK only watches its upstream socket during the connect handshake —
+  // if Inworld drops the connection mid-session, no event fires and the
+  // session silently stops responding. Watch the raw socket ourselves.
+  const upstream = (voice as unknown as { ws?: { once: (ev: string, cb: (...a: never[]) => void) => void } }).ws;
+  upstream?.once("close", ((code: number, reason: Buffer) => {
+    // Stale or self-initiated closes (recovery/cleanup) are expected.
+    if (session.closed || session.voice !== voice) return;
+    void recoverSession(session, ws, `upstream closed: ${code} ${reason?.toString() || "(no reason)"}`);
+  }) as never);
+
+  // Spoken intro (greeting or recovery notice). NOT voice.speak(): per
+  // realtime-API semantics, speak()'s response.create carries per-response
+  // instructions ("Repeat the following text: …") that REPLACE the session
+  // instructions for that response — the model would repeat the text, lose
+  // every voice rule, and then improvise a markdown feature menu. It also
+  // plants the text in history as a user message. Instead: seed one user item
+  // (Anthropic rejects a response on an empty conversation) and trigger a
+  // bare answer() so the session instructions govern the intro.
+  (voice as unknown as { sendEvent: (type: string, data: unknown) => void }).sendEvent(
+    "conversation.item.create",
+    {
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: intro.seed }],
+      },
+    },
+  );
+  void voice.answer({}).catch((err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err);
+    sendJSON(ws, { type: "error", message: `intro: ${message}` });
+  });
+}
+
+async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
+  if (!process.env.INWORLD_API_KEY) {
+    sendJSON(ws, { type: "error", message: "INWORLD_API_KEY is not set" });
+    ws.close(1011, "missing api key");
+    return null;
+  }
+
+  const session: VoiceSession = {
+    siteState: createSiteState(),
+    voice: null,
+    cancelled: new Set<string>(),
+    watchdog: null,
+    recovering: false,
+    recoveries: 0,
+    closed: false,
+    cleanup: async () => {
+      session.closed = true;
+      closeVoice(session);
+    },
+  };
+
   try {
-    await voice.connect();
+    await connectVoice(session, ws, {
+      seed: "[A visitor just joined the session — greet them.]",
+    });
   } catch (err) {
     sendJSON(ws, {
       type: "error",
@@ -163,57 +305,9 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
     return null;
   }
 
-  // The SDK only watches its upstream socket during the connect handshake —
-  // if Inworld drops the connection mid-session, no event fires and the
-  // session silently stops responding. Watch the raw socket ourselves and
-  // close the browser WS so the UI shows the disconnect instead of hanging.
-  let teardown = false;
-  const upstream = (voice as unknown as { ws?: { once: (ev: string, cb: (...a: never[]) => void) => void } }).ws;
-  upstream?.once("close", ((code: number, reason: Buffer) => {
-    if (teardown) return; // we closed it — normal cleanup
-    console.warn(`inworld upstream closed mid-session: ${code} ${reason?.toString() || "(no reason)"}`);
-    sendJSON(ws, { type: "error", message: "voice session lost — tap to restart" });
-    ws.close(1011, "upstream closed");
-  }) as never);
-
-  // Send initial state + ready signal, then a fire-and-forget greeting. The
-  // greeting's audio drains via the `speaking` listener.
-  //
-  // NOT voice.speak(): per realtime-API semantics, speak()'s response.create
-  // carries per-response instructions ("Repeat the following text: …") that
-  // REPLACE the session instructions for that response — the model would
-  // repeat the greeting, lose every voice rule, and then improvise a markdown
-  // feature menu. It also plants the greeting in history as a user message.
-  // Instead: seed one user item (Anthropic rejects a response on an empty
-  // conversation) and trigger a bare answer() so the session instructions —
-  // voice rules included — govern the greeting.
-  sendJSON(ws, { type: "state", state: siteState.get() });
+  sendJSON(ws, { type: "state", state: session.siteState.get() });
   sendJSON(ws, { type: "ready" });
-  (voice as unknown as { sendEvent: (type: string, data: unknown) => void }).sendEvent(
-    "conversation.item.create",
-    {
-      item: {
-        type: "message",
-        role: "user",
-        content: [{ type: "input_text", text: "[A visitor just joined the session — greet them.]" }],
-      },
-    },
-  );
-  void voice.answer({}).catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
-    sendJSON(ws, { type: "error", message: `greeting: ${message}` });
-  });
-
-  const cleanup = async () => {
-    teardown = true; // our own close — don't report it as an upstream drop
-    try {
-      voice.close();
-    } catch {
-      /* already closed */
-    }
-  };
-
-  return { agent, voice, siteState, cancelled, cleanup };
+  return session;
 }
 
 app.get(
@@ -226,7 +320,7 @@ app.get(
 
     async onMessage(evt: MessageEvent, ws: WSContext) {
       const session = sessions.get(ws);
-      if (!session) return;
+      if (!session || !session.voice) return; // voice is null mid-recovery
 
       const data = evt.data;
       // Binary mic frames. ws v8 hands us a Buffer for binary frames.
@@ -252,6 +346,12 @@ app.get(
       try {
         const msg = JSON.parse(typeof data === "string" ? data : data.toString());
         if (msg && typeof msg === "object" && msg.type === "hello") return;
+        // TEST_HOOKS=1 only: sever the upstream socket the way an
+        // Inworld-side drop would, to exercise the recovery path.
+        if (msg?.type === "__kill_upstream" && process.env.TEST_HOOKS === "1") {
+          (session.voice as unknown as { ws?: { terminate?: () => void } })?.ws?.terminate?.();
+          return;
+        }
       } catch {
         /* ignore non-JSON text */
       }

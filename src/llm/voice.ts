@@ -7,7 +7,11 @@ export function createVoice(): MastraVoice | null {
   // SDK defaults all the way: Inworld-hosted LLM, STT, and TTS voice,
   // semantic-VAD turn detection with interrupt_response: true, awaitable
   // speak(), barge-in surfaced as `interrupted`. No overrides needed.
-  const voice = new InworldRealtimeVoice({ apiKey });
+  // INWORLD_DEBUG=1 logs every realtime event — for diagnosing session wedges.
+  const voice = new InworldRealtimeVoice({
+    apiKey,
+    debug: process.env.INWORLD_DEBUG === "1",
+  });
   // Cast: voice packages bundle their own copy of MastraVoice's base class,
   // whose ECMAScript private brand differs from the @mastra/core copy. The
   // two are interchangeable at runtime; only the structural type check trips.

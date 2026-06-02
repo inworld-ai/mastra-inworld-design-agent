@@ -21,6 +21,12 @@ import net from "node:net";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 import type { Context } from "hono";
+import { Agent as UndiciAgent, fetch as undiciFetch } from "undici";
+
+// Node's built-in fetch enforces a 5-minute body timeout — fatal for Studio's
+// long-lived SSE streams (refresh-events), which it terminates MID-PIPE as an
+// uncatchable async error. Proxy through undici directly with timeouts off.
+const proxyDispatcher = new UndiciAgent({ headersTimeout: 0, bodyTimeout: 0 });
 
 const STUDIO_PORT = Number(process.env.STUDIO_PORT ?? 4112);
 const USER = process.env.ADMIN_USERNAME ?? "";
@@ -87,24 +93,27 @@ export async function adminProxy(c: Context): Promise<Response> {
   headers.set("host", `127.0.0.1:${STUDIO_PORT}`);
   headers.delete("authorization"); // credentials stop at the proxy
 
-  const init: RequestInit & { duplex?: "half" } = {
+  // Casts: undici ships its own copies of the fetch web types, which don't
+  // structurally match lib.dom's — identical at runtime.
+  const init: Record<string, unknown> = {
     method: c.req.method,
     headers,
     redirect: "manual",
+    dispatcher: proxyDispatcher,
   };
   if (c.req.method !== "GET" && c.req.method !== "HEAD") {
     init.body = c.req.raw.body;
     init.duplex = "half";
   }
 
-  let upstream: Response;
+  let upstream: Awaited<ReturnType<typeof undiciFetch>>;
   try {
-    upstream = await fetch(target, init);
+    upstream = await undiciFetch(target, init as Parameters<typeof undiciFetch>[1]);
   } catch {
     return c.json({ error: "Studio backend is not running." }, 502);
   }
 
-  const respHeaders = new Headers(upstream.headers);
+  const respHeaders = new Headers(upstream.headers as unknown as HeadersInit);
   // fetch() already decompressed the body — drop stale encoding headers.
   respHeaders.delete("content-encoding");
   respHeaders.delete("content-length");
@@ -114,7 +123,10 @@ export async function adminProxy(c: Context): Promise<Response> {
       `${COOKIE_NAME}=${sessionToken}; Path=/admin; HttpOnly; SameSite=Strict`,
     );
   }
-  return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+  return new Response(upstream.body as unknown as BodyInit | null, {
+    status: upstream.status,
+    headers: respHeaders,
+  });
 }
 
 /* ---------- WebSocket proxy ----------
