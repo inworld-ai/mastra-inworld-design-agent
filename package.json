@@ -6,8 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "build": "tsc",
-    "start": "node --env-file=.env dist/index.js"
+    "build": "mastra build --studio",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
@@ -16,11 +17,12 @@
     "@mastra/core": "1.38.0-alpha.5",
     "@mastra/voice-inworld": "0.3.0-alpha.1",
     "hono": "^4.6.0",
+    "mastra": "1.11.0-alpha.6",
+    "tsx": "^4.21.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "tsx": "^4.21.0",
     "typescript": "^5.5.0"
   },
   "engines": {

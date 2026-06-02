@@ -5,6 +5,7 @@ import type { WSContext } from "hono/ws";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { adminProxy, handleAdminUpgrade, startStudio } from "./admin";
 import { createDesigner, type DesignerAgent } from "./mastra/agents/designer";
 import { createSiteState, defaults, type SiteStateStore } from "./mastra/state/site-state";
 
@@ -237,6 +238,11 @@ app.get(
   })),
 );
 
+/* ---------- /admin (Mastra Studio, basic-auth gated) ---------- */
+
+app.all("/admin", adminProxy);
+app.all("/admin/*", adminProxy);
+
 /* ---------- Static files ----------
  *
  * Serve everything under ./public for non-API GETs. Walks up from this file
@@ -306,9 +312,27 @@ app.get("*", async (c, next) => {
 
 /* ---------- Boot ---------- */
 
-const server = serve({ fetch: app.fetch, port: PORT }, info => {
+const server = serve({ fetch: app.fetch, port: PORT, hostname: process.env.HOST ?? "0.0.0.0" }, info => {
   console.log(`design-agent server on http://localhost:${info.port}`);
   console.log(`voice WS at ws://localhost:${info.port}/api/voice`);
 });
 
 injectWebSocket(server);
+
+// @hono/node-ws's upgrade listener force-closes any upgrade it doesn't own,
+// so re-dispatch: /admin upgrades (Studio's playground WS) go to the proxy,
+// everything else falls through to node-ws for /api/voice.
+{
+  const nodeWsListeners = server
+    .listeners("upgrade")
+    .slice() as Array<(req: never, socket: never, head: never) => void>;
+  server.removeAllListeners("upgrade");
+  server.on("upgrade", (req, socket, head) => {
+    if (handleAdminUpgrade(req, socket, head)) return;
+    for (const listener of nodeWsListeners) {
+      listener(req as never, socket as never, head as never);
+    }
+  });
+}
+
+startStudio(path.dirname(publicDir));
