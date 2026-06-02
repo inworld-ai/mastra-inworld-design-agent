@@ -74,8 +74,6 @@ The included [`render.yaml`](render.yaml) deploys everything as **one web servic
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | no | Enable Mastra Studio at `/admin`. Unset = disabled. |
 | `PORT` | no | Public server port (default 4111) |
 | `STUDIO_PORT` | no | Internal Studio port (default 4112, loopback only) |
-| `INWORLD_REALTIME_MODEL` | no | Realtime LLM (default `anthropic/claude-sonnet-4-6`) |
-| `INWORLD_SPEAKER` | no | TTS voice (default `Sarah`) |
 | `INWORLD_TEXT_MODEL` | no | Studio text-chat model via Inworld's router (default `openai/gpt-4.1`) |
 | `DATABASE_URL` | no | Shared Studio-edits DB (default `file:./data/mastra.db`) |
 | `PUBLIC_AGENT_STATUS` | no | `published` (default: edits go live on Activate) or `draft` (live on save) |
@@ -91,6 +89,8 @@ src/
 │   └── voice.ts        # InworldRealtimeVoice factory
 └── mastra/
     ├── index.ts        # Mastra instance for Studio (bundled by `mastra build --studio`)
+    ├── store.ts        # shared SQLite storage — the Studio-edits DB both processes open
+    ├── resolve-instructions.ts  # public server's per-session read of published edits
     ├── agents/designer.ts
     ├── state/site-state.ts
     └── tools/          # the 10 design tools

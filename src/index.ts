@@ -2,9 +2,8 @@ import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import type { WSContext } from "hono/ws";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { adminProxy, handleAdminUpgrade, startStudio } from "./admin";
 import { createDesigner, type DesignerAgent } from "./mastra/agents/designer";
 import { resolveDesignerInstructions } from "./mastra/resolve-instructions";
@@ -265,40 +264,10 @@ app.all("/admin/*", adminProxy);
 
 /* ---------- Static files ----------
  *
- * Serve everything under ./public for non-API GETs. Walks up from this file
- * AND from cwd because `tsx watch` from project root works, but a bundled
- * deploy may run from a different directory. */
+ * Serve everything under ./public for non-API GETs. dev, start, and the
+ * Render deploy all run from the project root, so cwd is enough. */
 
-async function resolvePublicDir(): Promise<string> {
-  if (process.env.MASTRA_PUBLIC_DIR) return path.resolve(process.env.MASTRA_PUBLIC_DIR);
-
-  const seeds: string[] = [];
-  try {
-    seeds.push(path.dirname(fileURLToPath(import.meta.url)));
-  } catch {
-    /* not file://, skip */
-  }
-  seeds.push(process.cwd());
-
-  for (const seed of seeds) {
-    let dir = seed;
-    for (let i = 0; i < 8; i++) {
-      const candidate = path.join(dir, "public");
-      try {
-        const info = await stat(candidate);
-        if (info.isDirectory()) return candidate;
-      } catch {
-        /* keep walking */
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  }
-  return path.resolve(process.cwd(), "public");
-}
-
-const publicDir = await resolvePublicDir();
+const publicDir = path.resolve(process.cwd(), "public");
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

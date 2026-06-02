@@ -29,8 +29,3 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      # Optional overrides:
-      # - key: INWORLD_REALTIME_MODEL
-      #   value: anthropic/claude-sonnet-4-6
-      # - key: INWORLD_SPEAKER
-      #   value: Sarah

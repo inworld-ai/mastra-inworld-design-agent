@@ -178,7 +178,7 @@ $debugClear.addEventListener("click", () => {
   $log.innerHTML = "";
 });
 
-/* ---------- Voice (Inworld Realtime via SSE + chunked POSTs) ---------- */
+/* ---------- Voice (Inworld Realtime via WebSocket) ---------- */
 
 const SAMPLE_RATE = 24_000;
 const MIC_FLUSH_MS = 80;
