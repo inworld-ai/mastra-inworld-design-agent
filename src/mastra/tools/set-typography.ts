@@ -5,8 +5,7 @@ import type { SiteStateStore } from "../state/site-state";
 export function makeSetTypographyTool(siteState: SiteStateStore) {
   return createTool({
     id: "set_typography",
-    description:
-      "Update typography. `fontFamily` is a Google Fonts family name loaded at runtime.",
+    description: "Update typography. `fontFamily` is a Google Fonts family name loaded at runtime.",
     inputSchema: z.object({
       fontFamily: z
         .string()

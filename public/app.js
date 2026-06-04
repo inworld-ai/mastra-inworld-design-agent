@@ -21,20 +21,28 @@ const TOOLS = [
   { id: "add_feature", label: "add_feature", desc: "append a new feature card" },
   { id: "remove_feature", label: "remove_feature", desc: "delete a feature card by index" },
   { id: "update_feature", label: "update_feature", desc: "edit an existing feature card" },
-  { id: "apply_preset", label: "apply_preset", desc: "dark, cream, ocean, sunset, mono, forest, neon, default" },
+  {
+    id: "apply_preset",
+    label: "apply_preset",
+    desc: "dark, cream, ocean, sunset, mono, forest, neon, default",
+  },
   { id: "set_marquee", label: "set_marquee", desc: "change the top scrolling marquee text" },
   { id: "set_decor", label: "set_decor", desc: "garish 90s or tasteful modern styling" },
   { id: "reset", label: "reset", desc: "restore everything to defaults" },
 ];
 
 function escape(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
+  return String(s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
 }
 
 function ensureFont(family) {
@@ -87,12 +95,10 @@ function render(state) {
     <section class="site-tools" aria-label="Tools the agent can call">
       <h3>Tools the agent can call</h3>
       <ul class="site-tools__list">
-        ${TOOLS.map(
-          (t) => {
-            const cls = "site-tool" + (toolUsage.used.has(t.id) ? " is-used" : "");
-            return `<li class="${cls}" data-tool="${escape(t.id)}"><code class="site-tool__name">${escape(t.label)}</code> <span class="site-tool__desc">${escape(t.desc)}</span></li>`;
-          },
-        ).join("")}
+        ${TOOLS.map((t) => {
+          const cls = "site-tool" + (toolUsage.used.has(t.id) ? " is-used" : "");
+          return `<li class="${cls}" data-tool="${escape(t.id)}"><code class="site-tool__name">${escape(t.label)}</code> <span class="site-tool__desc">${escape(t.desc)}</span></li>`;
+        }).join("")}
       </ul>
     </section>
     <div class="site-cta-wrap">
@@ -149,9 +155,7 @@ function renderCtaLabel(text) {
   const lines = String(text).split(/\r?\n/);
   const [first, ...rest] = lines;
   const main = `<span class="site-cta__main">${escape(first)}</span>`;
-  const sub = rest.length
-    ? `<span class="site-cta__sub">${escape(rest.join(" "))}</span>`
-    : "";
+  const sub = rest.length ? `<span class="site-cta__sub">${escape(rest.join(" "))}</span>` : "";
   return main + sub;
 }
 
@@ -161,8 +165,10 @@ function applyVoiceStatusToCta() {
   btn.dataset.voice = voiceStatus;
   const label = btn.querySelector(".site-cta__label");
   if (!label) return;
-  if (voiceStatus === "connecting") label.innerHTML = `<span class="site-cta__main">Connecting…</span>`;
-  else if (voiceStatus === "on") label.innerHTML = `<span class="site-cta__main">Listening — tap to stop</span>`;
+  if (voiceStatus === "connecting")
+    label.innerHTML = `<span class="site-cta__main">Connecting…</span>`;
+  else if (voiceStatus === "on")
+    label.innerHTML = `<span class="site-cta__main">Listening — tap to stop</span>`;
   else label.innerHTML = renderCtaLabel(lastCtaLabel);
 }
 
@@ -255,7 +261,9 @@ function playPcmChunk(i16) {
 function stopAllAudio() {
   voice.audioGen++; // invalidate every frame queued before this barge-in
   for (const src of voice.activeAudio) {
-    try { src.stop(); } catch {}
+    try {
+      src.stop();
+    } catch {}
   }
   voice.activeAudio.clear();
   voice.outCursor = voice.ctxOut ? voice.ctxOut.currentTime : 0;
@@ -322,7 +330,9 @@ function handleVoiceMessage(data) {
       setVoiceUI("on");
       break;
     case "state":
-      try { render(msg.state); } catch {}
+      try {
+        render(msg.state);
+      } catch {}
       break;
     case "tool":
       markToolUsed(msg.toolName || "tool");
@@ -397,15 +407,22 @@ async function stopVoice(closeSocket = true) {
     voice.flushTimer = null;
   }
   if (closeSocket && voice.ws) {
-    try { voice.ws.close(1000, "client stop"); } catch {}
+    try {
+      voice.ws.close(1000, "client stop");
+    } catch {}
   }
   voice.ws = null;
   if (voice.worklet) {
-    try { voice.worklet.port.onmessage = null; voice.worklet.disconnect(); } catch {}
+    try {
+      voice.worklet.port.onmessage = null;
+      voice.worklet.disconnect();
+    } catch {}
     voice.worklet = null;
   }
   if (voice.source) {
-    try { voice.source.disconnect(); } catch {}
+    try {
+      voice.source.disconnect();
+    } catch {}
     voice.source = null;
   }
   if (voice.stream) {
@@ -413,8 +430,18 @@ async function stopVoice(closeSocket = true) {
     voice.stream = null;
   }
   stopAllAudio();
-  if (voice.ctxIn) { try { await voice.ctxIn.close(); } catch {} voice.ctxIn = null; }
-  if (voice.ctxOut) { try { await voice.ctxOut.close(); } catch {} voice.ctxOut = null; }
+  if (voice.ctxIn) {
+    try {
+      await voice.ctxIn.close();
+    } catch {}
+    voice.ctxIn = null;
+  }
+  if (voice.ctxOut) {
+    try {
+      await voice.ctxOut.close();
+    } catch {}
+    voice.ctxOut = null;
+  }
   voice.pending.length = 0;
   voice.active = false;
   setVoiceUI("off");

@@ -1,8 +1,15 @@
-# Mastra Design Agent
+# Inworld Mastra Design Agent
+
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Powered by Inworld AI](https://img.shields.io/badge/Powered_by-Inworld_AI-orange)](https://inworld.ai)
+[![Documentation](https://img.shields.io/badge/Documentation-Read_Docs-blue)](https://docs.inworld.ai)
+[![Model Providers](https://img.shields.io/badge/Model_Providers-See_Models-purple)](https://docs.inworld.ai/docs/models#llm)
 
 A deliberately ugly landing page with a voice agent that redesigns it live. Talk to it — colors, fonts, copy, layout, the works — and watch every change land in real time.
 
 Built with [Mastra](https://mastra.ai) and [`@mastra/voice-inworld`](https://www.npmjs.com/package/@mastra/voice-inworld)'s `InworldRealtimeVoice`: full-duplex speech with semantic-VAD turn taking, barge-in, and server-side tool calling. One Inworld API key covers everything — realtime voice and the agent's text-path model (routed through Inworld's OpenAI-compatible API).
+
+![App](screenshot.jpg)
 
 ## What to try
 
@@ -100,8 +107,12 @@ public/                 # the landing page — vanilla JS, no build step
 
 ## Package versions
 
-`InworldRealtimeVoice` ships in `@mastra/voice-inworld`, currently on the npm **`alpha`** tag — this repo pins `@mastra/voice-inworld@0.3.0-alpha.1` and `@mastra/core@1.38.0-alpha.5` (`.npmrc` sets `legacy-peer-deps` until the stable releases land). For a minimal terminal-only example of the same voice stack, see [inworld-mastra-cli-demo](https://github.com/cshape/inworld-mastra-cli-demo).
+`InworldRealtimeVoice` ships in `@mastra/voice-inworld`, currently on the npm **`alpha`** tag — this repo pins `@mastra/voice-inworld@0.3.0-alpha.1` and `@mastra/core@1.38.0-alpha.5` (`.npmrc` sets `legacy-peer-deps` until the stable releases land).
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
 
 ## License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -60,19 +60,19 @@ export const defaults: SiteState = {
   features: [
     {
       title: "Tell me a vibe",
-      body: "Say things like \"make it feel like a Swiss design poster\" or \"I want it to look like a startup from 2014\".",
+      body: 'Say things like "make it feel like a Swiss design poster" or "I want it to look like a startup from 2014".',
     },
     {
       title: "Or be specific",
-      body: "Say \"background cream, headline serif, accent red\" and watch each change land.",
+      body: 'Say "background cream, headline serif, accent red" and watch each change land.',
     },
     {
       title: "Or pick a preset",
-      body: "Say \"apply the sunset preset\". Presets: default, dark, cream, ocean, sunset, mono, forest, neon.",
+      body: 'Say "apply the sunset preset". Presets: default, dark, cream, ocean, sunset, mono, forest, neon.',
     },
     {
       title: "Edit anything you see",
-      body: "Even this card. Say \"change the third feature\" or \"add a card about pricing\".",
+      body: 'Even this card. Say "change the third feature" or "add a card about pricing".',
     },
   ],
   marquee: "Powered by Inworld AI (#1 Ranked TTS) and Mastra (Best Typescript Agent Framework)",

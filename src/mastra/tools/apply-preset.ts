@@ -2,16 +2,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import type { SiteStateStore } from "../state/site-state";
 
-const preset = z.enum([
-  "default",
-  "dark",
-  "cream",
-  "ocean",
-  "sunset",
-  "mono",
-  "forest",
-  "neon",
-]);
+const preset = z.enum(["default", "dark", "cream", "ocean", "sunset", "mono", "forest", "neon"]);
 
 export function makeApplyPresetTool(siteState: SiteStateStore) {
   return createTool({

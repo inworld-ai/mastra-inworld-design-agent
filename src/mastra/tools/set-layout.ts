@@ -11,9 +11,7 @@ export function makeSetLayoutTool(siteState: SiteStateStore) {
     description: "Update the page layout — alignment and hero variant.",
     inputSchema: z.object({
       alignment: alignment.optional().describe("Horizontal alignment of hero text"),
-      heroVariant: heroVariant
-        .optional()
-        .describe("Hero arrangement: split, stacked, or minimal"),
+      heroVariant: heroVariant.optional().describe("Hero arrangement: split, stacked, or minimal"),
     }),
     outputSchema: z.object({
       alignment,

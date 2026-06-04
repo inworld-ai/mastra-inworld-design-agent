@@ -13,8 +13,8 @@ const PORT = Number(process.env.PORT ?? 4111);
 
 // Demo-stability net: a stray async error (e.g. a terminated proxied stream)
 // shouldn't take down every active voice session. Log and keep serving.
-process.on("uncaughtException", err => console.error("[uncaught]", err));
-process.on("unhandledRejection", err => console.error("[unhandled rejection]", err));
+process.on("uncaughtException", (err) => console.error("[uncaught]", err));
+process.on("unhandledRejection", (err) => console.error("[unhandled rejection]", err));
 
 const app = new Hono();
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -26,7 +26,7 @@ const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
  * any changes they make live only inside their own WebSocket session.
  */
 
-app.get("/api/state", c => c.json(defaults));
+app.get("/api/state", (c) => c.json(defaults));
 
 /* ---------- /api/voice (WebSocket) ----------
  *
@@ -273,9 +273,7 @@ async function connectVoice(
     // Inworld error events nest the useful part: { error: { message, ... } }.
     const e = err as { message?: string; error?: { message?: string } };
     const message =
-      e?.error?.message ??
-      e?.message ??
-      (err instanceof Error ? err.message : JSON.stringify(err));
+      e?.error?.message ?? e?.message ?? (err instanceof Error ? err.message : JSON.stringify(err));
     console.warn(
       "upstream voice error:",
       typeof err === "object" ? JSON.stringify(err).slice(0, 600) : String(err),
@@ -295,11 +293,17 @@ async function connectVoice(
   // The SDK only watches its upstream socket during the connect handshake —
   // if Inworld drops the connection mid-session, no event fires and the
   // session silently stops responding. Watch the raw socket ourselves.
-  const upstream = (voice as unknown as { ws?: { once: (ev: string, cb: (...a: never[]) => void) => void } }).ws;
+  const upstream = (
+    voice as unknown as { ws?: { once: (ev: string, cb: (...a: never[]) => void) => void } }
+  ).ws;
   upstream?.once("close", ((code: number, reason: Buffer) => {
     // Stale or self-initiated closes (recovery/cleanup) are expected.
     if (session.closed || session.voice !== voice) return;
-    void recoverSession(session, ws, `upstream closed: ${code} ${reason?.toString() || "(no reason)"}`);
+    void recoverSession(
+      session,
+      ws,
+      `upstream closed: ${code} ${reason?.toString() || "(no reason)"}`,
+    );
   }) as never);
 
   // Spoken intro (greeting or recovery notice). NOT voice.speak(): per
@@ -490,10 +494,13 @@ app.get("*", async (c, next) => {
 
 /* ---------- Boot ---------- */
 
-const server = serve({ fetch: app.fetch, port: PORT, hostname: process.env.HOST ?? "0.0.0.0" }, info => {
-  console.log(`design-agent server on http://localhost:${info.port}`);
-  console.log(`voice WS at ws://localhost:${info.port}/api/voice`);
-});
+const server = serve(
+  { fetch: app.fetch, port: PORT, hostname: process.env.HOST ?? "0.0.0.0" },
+  (info) => {
+    console.log(`design-agent server on http://localhost:${info.port}`);
+    console.log(`voice WS at ws://localhost:${info.port}/api/voice`);
+  },
+);
 
 injectWebSocket(server);
 
@@ -501,9 +508,9 @@ injectWebSocket(server);
 // so re-dispatch: /admin upgrades (Studio's playground WS) go to the proxy,
 // everything else falls through to node-ws for /api/voice.
 {
-  const nodeWsListeners = server
-    .listeners("upgrade")
-    .slice() as Array<(req: never, socket: never, head: never) => void>;
+  const nodeWsListeners = server.listeners("upgrade").slice() as Array<
+    (req: never, socket: never, head: never) => void
+  >;
   server.removeAllListeners("upgrade");
   server.on("upgrade", (req, socket, head) => {
     if (handleAdminUpgrade(req, socket, head)) return;

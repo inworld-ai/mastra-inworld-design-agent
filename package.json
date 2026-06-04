@@ -1,16 +1,22 @@
 {
-  "name": "mastra-design-agent",
+  "name": "inworld-mastra-design-agent",
   "version": "0.1.0",
   "private": true,
   "description": "Voice agent that redesigns a live landing page — Mastra + Inworld realtime voice, with auth-gated Mastra Studio.",
   "license": "MIT",
-  "repository": "github:cshape/mastra-inworld-design-agent",
+  "author": "Inworld AI",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/inworld-ai/inworld-mastra-design-agent.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "mastra build --studio",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"public/*.{js,css}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"public/*.{js,css}\""
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.63",
@@ -28,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "prettier": "^3.8.3",
     "typescript": "^5.5.0"
   },
   "engines": {
