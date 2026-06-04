@@ -205,12 +205,14 @@ const voice = {
   flushTimer: null,
   outCursor: 0,
   activeAudio: new Set(),
-  /** Response id stamped on the most recent `audio.header`. The next binary
-   *  frame is assumed to belong to this response. */
-  pendingResponseId: null,
-  /** Response ids the server told us were cancelled. Audio chunks tagged with
-   *  these ids are dropped instead of scheduled. Cleared on speaking.done. */
-  cancelledResponseIds: new Set(),
+  /** Barge-in epoch. Bumped by every stopAllAudio(); an `audio.header`
+   *  snapshots the current value into `pendingGen`, and a binary frame whose
+   *  header predates the latest interrupt (pendingGen !== audioGen) is dropped.
+   *  This binds each frame to the playback generation it was queued in, so a
+   *  cancelled response's in-flight tail can never re-arm playback — even when
+   *  the next response's frames interleave with the old one's on the wire. */
+  audioGen: 0,
+  pendingGen: 0,
 };
 
 function floatToPCM16(f32) {
@@ -226,13 +228,6 @@ function pcm16ToFloat(i16) {
   const f32 = new Float32Array(i16.length);
   for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 0x8000;
   return f32;
-}
-
-function decodeAudio(b64) {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
 }
 
 function setVoiceUI(state) {
@@ -258,6 +253,7 @@ function playPcmChunk(i16) {
 }
 
 function stopAllAudio() {
+  voice.audioGen++; // invalidate every frame queued before this barge-in
   for (const src of voice.activeAudio) {
     try { src.stop(); } catch {}
   }
@@ -297,14 +293,16 @@ function onMicChunk(f32) {
 }
 
 function playBinaryAudio(buf) {
-  // Drop audio belonging to a response we already cancelled (barge-in tail).
-  if (voice.pendingResponseId && voice.cancelledResponseIds.has(voice.pendingResponseId)) return;
+  // Drop audio whose header predates the most recent barge-in (its generation
+  // was invalidated by stopAllAudio). Prevents a cancelled response's tail
+  // from resuming playback on top of the user / the next response.
+  if (voice.pendingGen !== voice.audioGen) return;
   playPcmChunk(new Int16Array(buf));
 }
 
 function handleVoiceMessage(data) {
-  // Binary frames are TTS audio chunks. The preceding `audio.header` JSON set
-  // pendingResponseId; we use it to gate cancelled-response chunks.
+  // Binary frames are TTS audio chunks; the preceding `audio.header` JSON
+  // stamped the current playback epoch used to gate barge-in tail frames.
   if (data instanceof ArrayBuffer) {
     playBinaryAudio(data);
     return;
@@ -330,20 +328,15 @@ function handleVoiceMessage(data) {
       markToolUsed(msg.toolName || "tool");
       break;
     case "interrupted":
-      // Mark the response as cancelled BEFORE wiping the queue, so any
-      // in-flight binary frames that arrive in the next few ms get dropped
-      // instead of scheduled on top of fresh audio.
-      if (msg.responseId) voice.cancelledResponseIds.add(msg.responseId);
+      // Barge-in: stop playback and bump the epoch so any tail frames already
+      // in flight (their headers predate this) are dropped instead of resuming.
       stopAllAudio();
       break;
     case "speaking.done":
-      // End of one TTS response. Forget the cancellation flag — the id is
-      // done and reusing the same id by Inworld is unlikely but harmless to
-      // clear.
-      if (msg.responseId) voice.cancelledResponseIds.delete(msg.responseId);
       break;
     case "audio.header":
-      voice.pendingResponseId = msg.responseId || null;
+      // Bind the binary frame that follows to the current playback epoch.
+      voice.pendingGen = voice.audioGen;
       break;
     case "error":
       console.warn(`voice error: ${msg.message ?? "unknown"}`);
