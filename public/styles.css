@@ -108,9 +108,10 @@ body {
 
 .site-cta {
   font: inherit;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
   color: var(--site-accent, #0000ee);
   background: var(--site-bg, #ffffff);
   border: 3px solid currentColor;
@@ -139,6 +140,7 @@ body {
 .site-cta__label {
   display: inline-flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
 }
 
@@ -155,12 +157,17 @@ body {
 }
 
 .site-cta__dot {
+  /* Absolutely positioned so the (often invisible) status dot never shifts
+     the label off-center; it sits at the left edge as a status light. */
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: currentColor;
   opacity: 0;
-  align-self: center;
 }
 
 .site-cta[data-voice="connecting"] .site-cta__dot {

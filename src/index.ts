@@ -353,7 +353,7 @@ async function attachAgent(ws: WSContext): Promise<VoiceSession | null> {
 
   try {
     await connectVoice(session, ws, {
-      seed: "[A visitor just joined the session — greet them.]",
+      seed: "[A visitor just opened this loud, dated landing page. Open with ONE short, casual, friendly line that offers to help redesign it — e.g. ask if they want a hand making the page look better. Keep it natural and conversational, and vary your wording; don't say 'welcome'.]",
     });
   } catch (err) {
     sendJSON(ws, {
