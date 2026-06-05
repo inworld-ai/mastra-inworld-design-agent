@@ -449,11 +449,7 @@ function handleVoiceMessage(data) {
       // A *different* response starting to speak means the prior utterance is
       // over — apply any buffered UI change now, so it lands right as the
       // confirmation begins.
-      if (
-        voice.uiPending != null &&
-        msg.responseId &&
-        msg.responseId !== voice.uiPendingRespId
-      ) {
+      if (voice.uiPending != null && msg.responseId && msg.responseId !== voice.uiPendingRespId) {
         flushPendingUI();
       }
       if (msg.responseId) voice.activeRespId = msg.responseId;
