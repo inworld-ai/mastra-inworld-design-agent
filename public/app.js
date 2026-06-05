@@ -227,6 +227,17 @@ const voice = {
   bcAudio: new Set(),
   bcCursor: 0,
   pendingKind: "main",
+  /** Deferred UI updates. A tool's state snapshot arrives mid-utterance (the
+   *  agent leads in, THEN the tool runs), so we hold the visual change until
+   *  the spoken utterance that triggered it finishes — applied when the
+   *  follow-up response starts speaking, or via grace/fallback timers if the
+   *  agent says nothing after. `activeRespId` tracks the response currently
+   *  producing main audio (back-channels don't count). */
+  uiPending: null,
+  uiPendingRespId: null,
+  activeRespId: null,
+  uiGraceTimer: null,
+  uiFallbackTimer: null,
 };
 
 function floatToPCM16(f32) {
@@ -345,6 +356,34 @@ function playBinaryAudio(buf) {
   playPcmChunk(new Int16Array(buf));
 }
 
+// True while a main-audio utterance is in flight (or its tail is still
+// scheduled to play out). Back-channels are excluded — they overlap the user
+// and shouldn't gate UI updates.
+function isSpeaking() {
+  if (voice.activeRespId != null) return true;
+  return !!voice.ctxOut && voice.outCursor > voice.ctxOut.currentTime + 0.05;
+}
+
+// Apply a deferred site-state snapshot now and clear its timers. No-op if
+// nothing is buffered.
+function flushPendingUI() {
+  if (voice.uiGraceTimer) {
+    clearTimeout(voice.uiGraceTimer);
+    voice.uiGraceTimer = null;
+  }
+  if (voice.uiFallbackTimer) {
+    clearTimeout(voice.uiFallbackTimer);
+    voice.uiFallbackTimer = null;
+  }
+  if (voice.uiPending == null) return;
+  const state = voice.uiPending;
+  voice.uiPending = null;
+  voice.uiPendingRespId = null;
+  try {
+    render(state);
+  } catch {}
+}
+
 function handleVoiceMessage(data) {
   // Binary frames are TTS audio chunks; the preceding `audio.header` JSON
   // stamped the current playback epoch used to gate barge-in tail frames.
@@ -367,9 +406,20 @@ function handleVoiceMessage(data) {
       setVoiceUI("on");
       break;
     case "state":
-      try {
-        render(msg.state);
-      } catch {}
+      // Hold the visual change until the utterance that triggered it finishes,
+      // so the page doesn't change mid-sentence while the agent is still
+      // leading in ("pink? yeah ok…" → <turns pink> → "there you go"). If
+      // nothing is being spoken, apply immediately (e.g. the initial render).
+      if (isSpeaking()) {
+        voice.uiPending = msg.state;
+        voice.uiPendingRespId = voice.activeRespId;
+        if (voice.uiFallbackTimer) clearTimeout(voice.uiFallbackTimer);
+        voice.uiFallbackTimer = setTimeout(flushPendingUI, 4000); // safety net
+      } else {
+        try {
+          render(msg.state);
+        } catch {}
+      }
       break;
     case "tool":
       markToolUsed(msg.toolName || "tool");
@@ -378,13 +428,35 @@ function handleVoiceMessage(data) {
       // Barge-in: stop playback and bump the epoch so any tail frames already
       // in flight (their headers predate this) are dropped instead of resuming.
       stopAllAudio();
+      voice.activeRespId = null;
+      // The turn was cut off but the tool already ran server-side — reflect it.
+      flushPendingUI();
       break;
     case "speaking.done":
+      if (msg.responseId && msg.responseId === voice.activeRespId) voice.activeRespId = null;
+      // Utterance finished. If a UI update is waiting on it, give the follow-up
+      // (confirmation) response a brief window to start — a new response's
+      // audio flushes it precisely; otherwise this grace applies it.
+      if (voice.uiPending != null) {
+        if (voice.uiGraceTimer) clearTimeout(voice.uiGraceTimer);
+        voice.uiGraceTimer = setTimeout(flushPendingUI, 700);
+      }
       break;
     case "audio.header":
       // Main TTS frame next: bind it to the current playback epoch.
       voice.pendingKind = "main";
       voice.pendingGen = voice.audioGen;
+      // A *different* response starting to speak means the prior utterance is
+      // over — apply any buffered UI change now, so it lands right as the
+      // confirmation begins.
+      if (
+        voice.uiPending != null &&
+        msg.responseId &&
+        msg.responseId !== voice.uiPendingRespId
+      ) {
+        flushPendingUI();
+      }
+      if (msg.responseId) voice.activeRespId = msg.responseId;
       break;
     case "backchannel.header":
       // Back-channel frame next: route it to the un-cancellable player.
@@ -481,6 +553,18 @@ async function stopVoice(closeSocket = true) {
   }
   voice.bcAudio.clear();
   voice.bcCursor = 0;
+  // Drop any deferred UI update + its timers — the session is ending.
+  if (voice.uiGraceTimer) {
+    clearTimeout(voice.uiGraceTimer);
+    voice.uiGraceTimer = null;
+  }
+  if (voice.uiFallbackTimer) {
+    clearTimeout(voice.uiFallbackTimer);
+    voice.uiFallbackTimer = null;
+  }
+  voice.uiPending = null;
+  voice.uiPendingRespId = null;
+  voice.activeRespId = null;
   if (voice.ctxIn) {
     try {
       await voice.ctxIn.close();
