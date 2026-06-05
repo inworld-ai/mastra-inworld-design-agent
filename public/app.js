@@ -219,6 +219,14 @@ const voice = {
    *  the next response's frames interleave with the old one's on the wire. */
   audioGen: 0,
   pendingGen: 0,
+  /** Back-channel playback — a SEPARATE channel from main TTS. Back-channels
+   *  ("mhm", "right") are voiced while the user is still speaking and must NOT
+   *  be cut off by barge-in, so they get their own source set + scheduling
+   *  cursor that stopAllAudio() never touches. `pendingKind` records which
+   *  player the next binary frame feeds, set by the header that precedes it. */
+  bcAudio: new Set(),
+  bcCursor: 0,
+  pendingKind: "main",
 };
 
 function floatToPCM16(f32) {
@@ -258,6 +266,25 @@ function playPcmChunk(i16) {
   src.onended = () => voice.activeAudio.delete(src);
 }
 
+// Back-channel audio plays WHILE the user is speaking and is deliberately
+// exempt from barge-in: its own player set + cursor, never gated by the
+// audioGen epoch and never stopped by stopAllAudio(). So `interrupted` cuts the
+// main response but lets a "mhm" finish naturally.
+function playBackchannelChunk(i16) {
+  if (!voice.ctxOut) return;
+  const f32 = pcm16ToFloat(i16);
+  const buf = voice.ctxOut.createBuffer(1, f32.length, SAMPLE_RATE);
+  buf.copyToChannel(f32, 0);
+  const src = voice.ctxOut.createBufferSource();
+  src.buffer = buf;
+  src.connect(voice.ctxOut.destination);
+  const startAt = Math.max(voice.bcCursor, voice.ctxOut.currentTime);
+  src.start(startAt);
+  voice.bcCursor = startAt + f32.length / SAMPLE_RATE;
+  voice.bcAudio.add(src);
+  src.onended = () => voice.bcAudio.delete(src);
+}
+
 function stopAllAudio() {
   voice.audioGen++; // invalidate every frame queued before this barge-in
   for (const src of voice.activeAudio) {
@@ -267,6 +294,8 @@ function stopAllAudio() {
   }
   voice.activeAudio.clear();
   voice.outCursor = voice.ctxOut ? voice.ctxOut.currentTime : 0;
+  // NOTE: voice.bcAudio is intentionally left alone — back-channels survive
+  // barge-in. Full teardown (stopVoice) is what clears them.
 }
 
 function scheduleFlush() {
@@ -301,9 +330,17 @@ function onMicChunk(f32) {
 }
 
 function playBinaryAudio(buf) {
-  // Drop audio whose header predates the most recent barge-in (its generation
-  // was invalidated by stopAllAudio). Prevents a cancelled response's tail
-  // from resuming playback on top of the user / the next response.
+  // Back-channel frames bypass barge-in gating entirely and feed their own
+  // player (see playBackchannelChunk). `pendingKind` was set by the header
+  // immediately preceding this frame.
+  if (voice.pendingKind === "backchannel") {
+    playBackchannelChunk(new Int16Array(buf));
+    return;
+  }
+  // Main TTS: drop audio whose header predates the most recent barge-in (its
+  // generation was invalidated by stopAllAudio). Prevents a cancelled
+  // response's tail from resuming playback on top of the user / the next
+  // response.
   if (voice.pendingGen !== voice.audioGen) return;
   playPcmChunk(new Int16Array(buf));
 }
@@ -345,8 +382,13 @@ function handleVoiceMessage(data) {
     case "speaking.done":
       break;
     case "audio.header":
-      // Bind the binary frame that follows to the current playback epoch.
+      // Main TTS frame next: bind it to the current playback epoch.
+      voice.pendingKind = "main";
       voice.pendingGen = voice.audioGen;
+      break;
+    case "backchannel.header":
+      // Back-channel frame next: route it to the un-cancellable player.
+      voice.pendingKind = "backchannel";
       break;
     case "error":
       console.warn(`voice error: ${msg.message ?? "unknown"}`);
@@ -367,6 +409,7 @@ async function startVoice() {
     voice.ctxIn = new AudioContext({ sampleRate: SAMPLE_RATE });
     voice.ctxOut = new AudioContext({ sampleRate: SAMPLE_RATE });
     voice.outCursor = voice.ctxOut.currentTime;
+    voice.bcCursor = voice.ctxOut.currentTime;
 
     const blobUrl = URL.createObjectURL(
       new Blob([RECORDER_WORKLET], { type: "application/javascript" }),
@@ -430,6 +473,14 @@ async function stopVoice(closeSocket = true) {
     voice.stream = null;
   }
   stopAllAudio();
+  // Back-channels survive barge-in but not a full session teardown.
+  for (const src of voice.bcAudio) {
+    try {
+      src.stop();
+    } catch {}
+  }
+  voice.bcAudio.clear();
+  voice.bcCursor = 0;
   if (voice.ctxIn) {
     try {
       await voice.ctxIn.close();

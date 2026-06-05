@@ -29,3 +29,14 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      # Optional model overrides — both route through Inworld's OpenAI-compatible
+      # router and have sensible code defaults, so leave them unset to use the
+      # defaults. To pin a different model, add the var in the Render dashboard
+      # (Environment), or uncomment a block below to fix it in the blueprint.
+      #   INWORLD_REALTIME_MODEL — realtime voice LLM
+      #                            (default: inworld/models/gemma-4-26b-a4b-it; e.g. openai/gpt-5.5)
+      #   INWORLD_TEXT_MODEL     — Studio text-chat model (default: openai/gpt-4.1)
+      # - key: INWORLD_REALTIME_MODEL
+      #   value: openai/gpt-5.5
+      # - key: INWORLD_TEXT_MODEL
+      #   value: openai/gpt-4.1

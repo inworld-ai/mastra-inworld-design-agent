@@ -220,6 +220,41 @@ async function connectVoice(
     }
   });
 
+  // Back-channels ("mhm", "right") play WHILE the user is still speaking and
+  // are exempt from barge-in by design. They arrive on a dedicated event as a
+  // separate PCM stream (NOT the `speaking` path), and their stream id is a
+  // backchannel_id that never appears in `interrupted` — so nothing here drops
+  // them. We relay each chunk on its own `backchannel.header` + binary frame so
+  // the client routes it to a player that survives `stopAllAudio()`. The
+  // header and its binary frame are sent adjacently and synchronously (no await
+  // between) so they can't be split by a concurrent `speaking` send.
+  on("backchannel", (payload: unknown) => {
+    const stream = payload as NodeJS.ReadableStream & { id?: string };
+    const backchannelId = stream.id;
+    stream.on("data", (chunk: Buffer | Uint8Array) => {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      sendJSON(ws, { type: "backchannel.header", backchannelId });
+      try {
+        ws.send(bytes as unknown as Uint8Array<ArrayBuffer>);
+      } catch {
+        /* socket closed */
+      }
+    });
+    stream.on("error", () => {
+      /* back-channel stream aborted upstream — nothing to recover */
+    });
+  });
+
+  on("backchannel.skipped", (payload: unknown) => {
+    // The decider declined a back-channel before any audio. Logged under debug
+    // because a steady stream of skips (esp. a prerequisites/permission reason)
+    // is the tell that back-channels aren't enabled for this Inworld key.
+    if (process.env.INWORLD_DEBUG === "1") {
+      const { reason } = (payload as { reason?: string }) ?? {};
+      console.log("[backchannel skipped]", reason ?? "(no reason)");
+    }
+  });
+
   // The first spoken response on a connection is its intro (greeting or
   // recovery apology) — completing THAT must not forgive recoveries, or an
   // error→recover→apology→error cycle would loop forever under the cap.
