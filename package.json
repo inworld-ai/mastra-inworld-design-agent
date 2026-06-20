@@ -29,7 +29,7 @@
     "hono": "^4.12.23",
     "mastra": "1.11.0-alpha.6",
     "tsx": "^4.21.0",
-    "undici": "^7.27.0",
+    "undici": "^7.28.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
