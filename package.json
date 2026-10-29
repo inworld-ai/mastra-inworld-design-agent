@@ -27,8 +27,8 @@
     "@mastra/libsql": "^1.12.0-alpha.0",
     "@mastra/voice-inworld": "0.3.0-alpha.1",
     "hono": "^4.13.7",
-    "mastra": "1.11.0-alpha.6",
-    "tsx": "^4.21.0",
+    "mastra": "1.36.0",
+    "tsx": "^4.23.15",
     "undici": "^7.29.1",
     "zod": "^3.25.0"
   },
