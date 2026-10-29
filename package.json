@@ -30,13 +30,16 @@
     "mastra": "1.11.0-alpha.6",
     "tsx": "^4.22.0",
     "undici": "^7.30.1",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "@ai-sdk/provider-utils-v5": "npm:@ai-sdk/provider-utils@3.0.28",
     "@ai-sdk/provider-utils-v6": "npm:@ai-sdk/provider-utils@4.0.33",
     "compression": "^1.8.2",
-    "esbuild": "^0.28.1"
+    "esbuild": "^0.28.1",
+    "zod-from-json-schema-v3": {
+      "zod": "$zod"
+    }
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

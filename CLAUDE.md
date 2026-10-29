@@ -51,7 +51,7 @@ public/                 # vanilla JS frontend, no build step
 - **State**: Tools mutate via setters in `state/site-state.ts`, don't reassign
 - **Paths**: Use `import.meta.url` not `process.cwd()` for file resolution
 - **Versions**: @mastra/* pinned to alpha tags (core, voice-inworld, editor, libsql, mastra CLI); `.npmrc` has legacy-peer-deps (npm prerelease range semantics). When stable 0.3.0 / 1.38 land, unpin and drop .npmrc.
-- **Overrides**: package.json `overrides` force security-patched versions where a parent pins below the fix (@mastra/core's `@ai-sdk/provider-utils-v5`/`-v6` aliases, `serve`'s `compression`, `@mastra/deployer`'s esbuild 0.27). Drop each once its parent ships a fixed range. `mastra build` drops them from `.mastra/output`, so `npm run build` reapplies them there (scripts/studio-overrides.mjs).
+- **Overrides**: package.json `overrides` force security-patched versions where a parent pins below the fix (@mastra/core's `@ai-sdk/provider-utils-v5`/`-v6` aliases, `serve`'s `compression`, `@mastra/deployer`'s esbuild 0.27, and zod for `@mastra/schema-compat`'s `zod-from-json-schema-v3` alias, which pins zod 3 but only runs when the root zod is v3). Drop each once its parent ships a fixed range. `mastra build` drops them from `.mastra/output`, so `npm run build` reapplies them there (scripts/studio-overrides.mjs).
 - **Voice casts**: voice packages bundle their own MastraVoice base class copy — the `as unknown as MastraVoice` casts are load-bearing until upstream extracts a shared base
 - **Environment**: one INWORLD_API_KEY covers voice + text model; key is pre-Base64-encoded, pass verbatim
 
