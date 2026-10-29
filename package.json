@@ -12,7 +12,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "build": "mastra build --studio",
+    "build": "mastra build --studio && node scripts/studio-overrides.mjs",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write \"src/**/*.ts\" \"public/*.{js,css}\"",
