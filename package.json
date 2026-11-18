@@ -27,7 +27,7 @@
     "@mastra/libsql": "^1.12.0-alpha.0",
     "@mastra/voice-inworld": "0.3.0-alpha.1",
     "hono": "^4.13.19",
-    "mastra": "1.40.0",
+    "mastra": "1.11.0-alpha.6",
     "tsx": "^4.22.0",
     "undici": "^7.30.1",
     "zod": "^4.6.7"
@@ -39,6 +39,9 @@
     "esbuild": "^0.28.1",
     "zod-from-json-schema-v3": {
       "zod": "$zod"
+    },
+    "archiver-utils": {
+      "glob": "^14.0.2"
     }
   },
   "devDependencies": {
